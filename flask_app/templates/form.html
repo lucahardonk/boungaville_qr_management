@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Flask Form</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    .rectangle {
+      width: 200px;
+      height: 100px;
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      display: inline-block;
+      margin: 10px;
+      text-align: center;
+      line-height: 100px;
+      font-weight: bold;
+      transition: background-color 0.3s ease;
+    }
+
+    .rectangle.submitted {
+      background-color: #4CAF50;
+      color: white;
+    }
+
+    .rectangle.failed {
+      background-color: #e74c3c;  /* Red */
+      color: white;
+    }
+
+
+    form {
+      margin-top: 30px;
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .submit-button {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .submit-button:hover {
+      background-color: #45a049;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Submit Your Info</h2>
+
+  <!-- Rectangles -->
+  <div class="rectangle 
+    {% if arduino1_ok %}submitted
+    {% elif submitted %}failed
+    {% endif %}">Box 1</div>
+
+  <div class="rectangle 
+    {% if arduino2_ok %}submitted
+    {% elif submitted %}failed
+    {% endif %}">Box 2</div>
+
+  <div class="rectangle 
+    {% if arduino3_ok %}submitted
+    {% elif submitted %}failed
+    {% endif %}">Box 3</div>
+
+  
+
+  <!-- Form -->
+  <form method="POST">
+    <div class="input-group">
+      <label>Name:</label><br>
+      <input type="text" name="name" required>
+    </div>
+
+    <div class="input-group">
+      <label>Surname:</label><br>
+      <input type="text" name="surname" required>
+    </div>
+
+    <div class="input-group">
+      <label>Date In:</label><br>
+      <input type="date" name="dateIn" required>
+    </div>
+
+    <div class="input-group">
+      <label>Date Out:</label><br>
+      <input type="date" name="dateOut" required>
+    </div>
+
+    <button type="submit" class="submit-button">Submit</button>
+    
+    <a href="{{ url_for('manage_qrcodes') }}">
+      <button type="button" class="submit-button" style="bottom: 80px;">Manage QR Codes</button>
+    </a>
+    
+  </form>
+
+  {% if message %}
+    <div class="message">
+      <p>{{ message }}</p>
+      {% if submitted %}
+        <p><strong>Generated QR Code:</strong> {{ code }}</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+
+</body>
+</html>

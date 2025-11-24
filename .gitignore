@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Postgres persistent data
+postgres_data/
+
+# Docker
+*.log
+
+# Flask cache
+instance/
+*.db

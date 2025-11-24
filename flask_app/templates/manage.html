@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Manage QR Codes</title>
+  <meta http-equiv="refresh" content="30">
+  <style>
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
+</head>
+<body>
+  <h2>QR Code Management</h2>
+
+  <table>
+    <thead>
+        <tr>
+            <th>Delete</th>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Surname</th>
+            <th>Date In</th>
+            <th>Date Out</th>
+            <th>Corridoio</th>
+            <th>Cancello</th>
+            <th>Ingresso Boungaville</th>
+        </tr>     
+    </thead>
+    <tbody>
+      {% for code, name, surname, date_in, date_out, cor_active, can_active, ing_active in qrcodes %}
+      <tr>
+        <td>
+            <form method="POST" action="{{ url_for('delete_qr', code=code) }}" onsubmit="return confirm('Are you sure you want to delete this QR code?');">
+              <button type="submit" style="color: red;">🗑️</button>
+            </form>
+          </td>
+        <td>{{ code }}</td>
+        <td>{{ name }}</td>
+        <td>{{ surname }}</td>
+        <td>{{ date_in }}</td>
+        <td>{{ date_out }}</td>
+  
+        <!-- Corridoio -->
+        <td>
+          {% if cor_active is not none %}
+            <form method="POST" action="{{ url_for('toggle_qr', zone='corridoio', code=code) }}">
+              <button type="submit">{{ '✅' if cor_active else '❌' }}</button>
+            </form>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+  
+        <!-- Cancello -->
+        <td>
+          {% if can_active is not none %}
+            <form method="POST" action="{{ url_for('toggle_qr', zone='cancello', code=code) }}">
+              <button type="submit">{{ '✅' if can_active else '❌' }}</button>
+            </form>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+  
+        <!-- Ingresso Boungaville -->
+        <td>
+          {% if ing_active is not none %}
+            <form method="POST" action="{{ url_for('toggle_qr', zone='boungaville', code=code) }}">
+              <button type="submit">{{ '✅' if ing_active else '❌' }}</button>
+            </form>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  
+
+  <a href="{{ url_for('submit_info') }}">← Back to Form</a>
+</body>
+</html>
