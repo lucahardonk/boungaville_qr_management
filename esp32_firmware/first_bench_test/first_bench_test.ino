@@ -2,15 +2,16 @@
  ******************************************************************************
  * @file     ETH_WebServer_WebOTA.ino
  * @brief    W5500 Ethernet web server with visit counter, clock, Web OTA, and NVS key storage
- * @version  V3.0
- * @date     2025-12-23
+ * @version  V3.3
+ * @date     2025-12-24
  * @author   Your Name
  * @license  MIT
  ******************************************************************************
  * 
  * Features:
  * - W5500 Ethernet connectivity with DHCP
- * - Web server with visit counter and live clock
+ * - Web server with visit counter and live clock (HTTP time sync)
+ * - Automatic Italian DST handling (CET/CEST)
  * - Secure Web-based OTA firmware updates with password protection
  * - NVS key-value storage (up to 100 strings, 128 chars each)
  * - Auto-assigned keys (k0, k1, k2...)
@@ -25,6 +26,34 @@
  * - Partition Scheme: Must use an OTA-enabled partition (e.g., "Minimal SPIFFS with OTA")
  * - Change OTA_PASSWORD before deployment
  * 
+ * ============================================================================
+ * API Usage Examples (from Linux terminal):
+ * ============================================================================
+ * 
+ * 1. Insert a QR code (auto-assigns key like k0, k1, k2...):
+ *    curl -X POST http://192.168.1.97/api/insert \
+ *      -H "Content-Type: application/json" \
+ *      -d '{"value":"table-5-boungaville"}'
+ * 
+ * 2. Print all stored QR codes:
+ *    curl http://192.168.1.97/api/print
+ * 
+ * 3. Remove a QR code by value:
+ *    curl -X POST http://192.168.1.97/api/remove \
+ *      -H "Content-Type: application/json" \
+ *      -d '{"value":"table-5-boungaville"}'
+ * 
+ * 4. Pretty print with jq:
+ *    curl http://192.168.1.97/api/print | jq
+ * 
+ * 5. Get current Italian time with DST info:
+ *    curl http://192.168.1.97/api/time
+ * 
+ * 6. Get current Italian time (pretty printed):
+ *    curl http://192.168.1.97/api/time | jq
+ * 
+ * Note: Replace 192.168.1.97 with your ESP32's actual IP address
+ * 
  ******************************************************************************
  */
 
@@ -32,6 +61,8 @@
 #include <Ethernet.h>
 #include <Update.h>
 #include <Preferences.h>
+#include <time.h>
+#include <sys/time.h>
 
 /* ====== CONFIGURATION ====== */
 
@@ -61,6 +92,7 @@ const char* OTA_PASSWORD = "admin123";  // ⚠️ CHANGE THIS IN PRODUCTION!
 EthernetServer server(SERVER_PORT);
 unsigned long visitCount = 200;
 Preferences prefs;
+bool timeIsSynced = false;
 
 /* ====== FUNCTION PROTOTYPES ====== */
 
@@ -75,6 +107,9 @@ void handleAPIDeleteKey(EthernetClient &client, int contentLength);
 void serve404(EthernetClient &client);
 void sendUpdateError(EthernetClient &client, const char *msg);
 void sendJSON(EthernetClient &client, int statusCode, const String &json);
+void handleAPIGetTime(EthernetClient &client);
+bool syncTimeViaHTTP();
+bool isDST(int year, int month, int day, int hour);
 
 // Helper Functions
 bool readLine(EthernetClient &client, String &out);
@@ -84,6 +119,208 @@ String urlDecode(String str);
 String htmlEscape(String str);
 int countKeys();
 String getKeyByIndex(int index);
+
+//api functions 
+void handleAPIInsert(EthernetClient &client, int contentLength);
+void handleAPIRemove(EthernetClient &client, int contentLength);
+void handleAPIPrint(EthernetClient &client);
+
+/* ====== TIME SYNC FUNCTIONS ====== */
+
+/**
+ * Check if a given date/time is in DST (Daylight Saving Time) for Italy
+ * DST Rules for Italy (Central European Time):
+ * - Starts: Last Sunday of March at 2:00 AM (becomes 3:00 AM)
+ * - Ends: Last Sunday of October at 3:00 AM (becomes 2:00 AM)
+ */
+bool isDST(int year, int month, int day, int hour) {
+  // DST only applies from March to October
+  if (month < 3 || month > 10) return false;
+  if (month > 3 && month < 10) return true;
+  
+  // Find last Sunday of the month
+  // Calculate day of week for the 1st of the month
+  int a = (14 - month) / 12;
+  int y = year - a;
+  int m = month + 12 * a - 2;
+  int dayOfWeek1st = (1 + y + y/4 - y/100 + y/400 + (31*m)/12) % 7; // 0=Sunday
+  
+  // Find last Sunday
+  int lastSunday = 31 - ((dayOfWeek1st + 30) % 7);
+  if (month == 3) lastSunday = 31 - ((dayOfWeek1st + 30) % 7);
+  if (month == 10) lastSunday = 31 - ((dayOfWeek1st + 30) % 7);
+  
+  // March: DST starts on last Sunday at 2:00 AM
+  if (month == 3) {
+    if (day < lastSunday) return false;
+    if (day > lastSunday) return true;
+    if (hour < 2) return false;
+    return true;
+  }
+  
+  // October: DST ends on last Sunday at 3:00 AM
+  if (month == 10) {
+    if (day < lastSunday) return true;
+    if (day > lastSunday) return false;
+    if (hour < 3) return true;
+    return false;
+  }
+  
+  return false;
+}
+
+bool syncTimeViaHTTP() {
+  Serial.println("[TIME] Attempting HTTP time sync...");
+  
+  EthernetClient httpClient;
+  const char* timeServer = "www.google.com";  // Reliable server with Date header
+  
+  if (httpClient.connect(timeServer, 80)) {
+    Serial.println("[TIME] Connected to time server");
+    
+    // Send HTTP HEAD request
+    httpClient.println("HEAD / HTTP/1.1");
+    httpClient.print("Host: ");
+    httpClient.println(timeServer);
+    httpClient.println("Connection: close");
+    httpClient.println();
+    
+    // Wait for response
+    unsigned long timeout = millis();
+    while (httpClient.connected() && !httpClient.available()) {
+      if (millis() - timeout > 5000) {
+        Serial.println("[TIME] HTTP timeout");
+        httpClient.stop();
+        return false;
+      }
+      delay(10);
+    }
+    
+    // Parse Date header
+    while (httpClient.available()) {
+      String line = httpClient.readStringUntil('\n');
+      line.trim();
+      
+      if (line.startsWith("Date: ")) {
+        Serial.print("[TIME] Received: ");
+        Serial.println(line);
+        
+        // Parse: "Date: Tue, 24 Dec 2024 14:30:45 GMT"
+        int firstComma = line.indexOf(',');
+        if (firstComma < 0) continue;
+        
+        String dateTime = line.substring(firstComma + 2);
+        dateTime.trim();
+        
+        // Parse components
+        struct tm timeinfo = {0};
+        char monthStr[4];
+        
+        int parsed = sscanf(dateTime.c_str(), "%d %3s %d %d:%d:%d",
+                           &timeinfo.tm_mday,
+                           monthStr,
+                           &timeinfo.tm_year,
+                           &timeinfo.tm_hour,
+                           &timeinfo.tm_min,
+                           &timeinfo.tm_sec);
+        
+        if (parsed == 6) {
+          // Convert month string to number
+          const char* months[] = {"Jan","Feb","Mar","Apr","May","Jun",
+                                  "Jul","Aug","Sep","Oct","Nov","Dec"};
+          for (int i = 0; i < 12; i++) {
+            if (strcmp(monthStr, months[i]) == 0) {
+              timeinfo.tm_mon = i;
+              break;
+            }
+          }
+          
+          timeinfo.tm_year -= 1900;  // Years since 1900
+          timeinfo.tm_isdst = 0;     // GMT has no DST
+          
+          // Manual conversion to epoch (GMT)
+          // Days since epoch calculation
+          int year = timeinfo.tm_year + 1900;
+          int month = timeinfo.tm_mon + 1;
+          int day = timeinfo.tm_mday;
+          
+          // Calculate days from 1970-01-01
+          long days = 0;
+          for (int y = 1970; y < year; y++) {
+            days += (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 366 : 365;
+          }
+          
+          // Add days for months in current year
+          int daysInMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+          bool isLeap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+          if (isLeap) daysInMonth[1] = 29;
+          
+          for (int m = 1; m < month; m++) {
+            days += daysInMonth[m - 1];
+          }
+          
+          days += day - 1;  // -1 because day 1 = 0 days elapsed
+          
+          // Convert to seconds (GMT epoch)
+          time_t gmtEpoch = days * 86400L + 
+                           timeinfo.tm_hour * 3600L + 
+                           timeinfo.tm_min * 60L + 
+                           timeinfo.tm_sec;
+          
+          // Check if DST applies (using GMT time for calculation)
+          bool inDST = isDST(year, month, day, timeinfo.tm_hour);
+          
+          // Apply Italian timezone offset
+          int offsetHours = inDST ? 2 : 1;  // CEST = UTC+2, CET = UTC+1
+          time_t italianEpoch = gmtEpoch + (offsetHours * 3600);
+          
+          // Set system time
+          struct timeval tv = { .tv_sec = italianEpoch, .tv_usec = 0 };
+          settimeofday(&tv, NULL);
+          
+          // Verify and display
+          struct tm italianTime;
+          time_t displayTime = italianEpoch;
+          gmtime_r(&displayTime, &italianTime);
+          
+          char timeStr[64];
+          snprintf(timeStr, sizeof(timeStr), "%04d-%02d-%02d %02d:%02d:%02d %s",
+                   italianTime.tm_year + 1900,
+                   italianTime.tm_mon + 1,
+                   italianTime.tm_mday,
+                   italianTime.tm_hour,
+                   italianTime.tm_min,
+                   italianTime.tm_sec,
+                   inDST ? "CEST (UTC+2)" : "CET (UTC+1)");
+          
+          Serial.print("[TIME] ✓ Time set via HTTP: ");
+          Serial.println(timeStr);
+          
+          httpClient.stop();
+          timeIsSynced = true;
+          return true;
+        }
+      }
+    }
+    
+    httpClient.stop();
+  } else {
+    Serial.println("[TIME] Failed to connect to time server");
+  }
+  
+  return false;
+}
+
+void initTime() {
+  Serial.println("[TIME] Initializing time synchronization...");
+  
+  if (syncTimeViaHTTP()) {
+    Serial.println("[TIME] ✓ Time synchronized successfully");
+  } else {
+    Serial.println("[TIME] ✗ Time sync failed");
+    Serial.println("[TIME] Clock will show incorrect time until sync succeeds");
+  }
+}
 
 /* ====== SETUP ====== */
 
@@ -96,7 +333,7 @@ void setup() {
   Serial.println("========================================\n");
 
   // Initialize NVS
-  prefs.begin("keys", false); // namespace "keys", RW mode
+  prefs.begin("keys", false);
   Serial.print("[INIT] NVS initialized. Keys stored: ");
   Serial.println(countKeys());
 
@@ -121,6 +358,10 @@ void setup() {
   // Start web server
   server.begin();
   Serial.println("[OK] Web server started");
+  
+  // Initialize HTTP time synchronization  
+  initTime();
+  
   Serial.println("\n========================================");
   Serial.print("Web Interface: http://");
   Serial.println(Ethernet.localIP());
@@ -136,6 +377,18 @@ void setup() {
 /* ====== MAIN LOOP ====== */
 
 void loop() {
+  // Periodic time re-sync (every 1 hour)
+  static unsigned long lastSync = 0;
+  if (millis() - lastSync > 3600000) {  // 1 hour
+    if (!timeIsSynced) {
+      Serial.println("[TIME] Attempting re-sync...");
+      if (syncTimeViaHTTP()) {
+        Serial.println("[TIME] Re-sync successful");
+      }
+    }
+    lastSync = millis();
+  }
+  
   EthernetClient client = server.available();
   if (!client) return;
 
@@ -186,23 +439,32 @@ void loop() {
       Serial.println(requestPath);
 
       // Route handling
-      if (requestMethod == "GET") {
-        if (requestPath == "/" || requestPath == "") {
-          serveHomePage(client);
-        } else if (requestPath == "/update") {
-          serveUpdatePage(client);
-        } else if (requestPath == "/keys") {
-          serveKeysPage(client);
-        } else if (requestPath == "/api/keys") {
-          handleAPIGetKeys(client);
-        } else {
-          serve404(client);
-        }
+      // Route handling
+      if (requestMethod == "GET") {  
+        if (requestPath == "/" || requestPath == "") {  
+          serveHomePage(client);  
+        } else if (requestPath == "/update") {  
+          serveUpdatePage(client);  
+        } else if (requestPath == "/keys") {  
+          serveKeysPage(client);  
+        } else if (requestPath == "/api/keys") {  
+          handleAPIGetKeys(client);  
+        } else if (requestPath == "/api/time") {
+          handleAPIGetTime(client);  
+        } else if (requestPath == "/api/print") {  // NEW
+          handleAPIPrint(client);  
+        } else {  
+          serve404(client);  
+        }  
       } else if (requestMethod == "POST") {
         if (requestPath == "/doupdate") {
           handleOTAUpload(client, contentLength, contentType);
         } else if (requestPath == "/api/keys") {
           handleAPIAddKey(client, contentLength);
+        } else if (requestPath == "/api/insert") {  // NEW
+          handleAPIInsert(client, contentLength);
+        } else if (requestPath == "/api/remove") {  // NEW
+          handleAPIRemove(client, contentLength);
         } else {
           serve404(client);
         }
@@ -234,6 +496,58 @@ void loop() {
 
 /* ====== HTTP HANDLERS ====== */
 
+void handleAPIGetTime(EthernetClient &client) {
+  time_t now;
+  struct tm timeinfo;
+  
+  time(&now);
+  gmtime_r(&now, &timeinfo);
+  
+  // Check DST status
+  bool inDST = isDST(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, 
+                     timeinfo.tm_mday, timeinfo.tm_hour);
+  
+  // Format time as HH:MM:SS
+  char timeStr[9];
+  snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", 
+           timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  
+  // Format date as YYYY-MM-DD
+  char dateStr[11];
+  snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", 
+           timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday);
+  
+  // Get day of week
+  const char* days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", 
+                        "Thursday", "Friday", "Saturday"};
+  const char* dayStr = days[timeinfo.tm_wday];
+  
+  // Get timezone info
+  const char* tzName = inDST ? "CEST" : "CET";
+  const char* tzOffset = inDST ? "+02:00" : "+01:00";
+  
+  // Build JSON response
+  String json = "{\"success\":true,\"time\":\"";
+  json += timeStr;
+  json += "\",\"date\":\"";
+  json += dateStr;
+  json += "\",\"day\":\"";
+  json += dayStr;
+  json += "\",\"timezone\":\"";
+  json += tzName;
+  json += "\",\"offset\":\"";
+  json += tzOffset;
+  json += "\",\"timestamp\":";
+  json += String((unsigned long)now);
+  json += ",\"synced\":";
+  json += timeIsSynced ? "true" : "false";
+  json += ",\"dst\":";
+  json += inDST ? "true" : "false";
+  json += "}";
+  
+  sendJSON(client, 200, json);
+}
+
 void serveHomePage(EthernetClient &client) {
   visitCount++;
   
@@ -242,7 +556,6 @@ void serveHomePage(EthernetClient &client) {
   client.println("Connection: close");
   client.println();
   
-  // Invia HTML in blocchi più piccoli con flush periodici
   client.print("<!DOCTYPE HTML><html><head><meta charset='UTF-8'>");
   client.print("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
   client.print("<title>ESP32-S3-ETH</title><style>");
@@ -259,7 +572,8 @@ void serveHomePage(EthernetClient &client) {
   client.flush();
   
   client.print("#clock{font-size:36px;margin:30px 0 10px 0;font-weight:bold;color:#667eea;text-align:center;font-family:'Courier New',monospace}");
-  client.print(".clock-label{text-align:center;color:#999;font-size:14px;margin-bottom:30px}");
+  client.print(".clock-label{text-align:center;color:#999;font-size:14px;margin-bottom:10px}");
+  client.print(".dst-badge{display:inline-block;padding:5px 12px;background:#ffc107;color:#333;border-radius:20px;font-size:12px;font-weight:600;margin:10px 0}");
   client.print(".ota-section{margin-top:40px;padding:25px;background:linear-gradient(135deg,#667eea15 0%,#764ba215 100%);border-radius:15px;border:2px solid #667eea30}");
   client.flush();
   
@@ -285,9 +599,10 @@ void serveHomePage(EthernetClient &client) {
   client.flush();
 
   client.print("<div id='clock'>--:--:--</div>");
-  client.print("<p class='clock-label'>🕐 Your Local Time</p>");
+  client.print("<p class='clock-label' id='clockLabel'>🕐 Italian Time (HTTP Synced)</p>");
+  client.print("<div id='dstBadge' style='text-align:center;display:none'></div>");
   client.flush();
-
+  
   client.print("<div class='ota-section'>");
   client.print("<div class='ota-title'>🔄 Firmware Update</div>");
   client.print("<div class='ota-info'>Device IP: <strong>");
@@ -314,15 +629,35 @@ void serveHomePage(EthernetClient &client) {
   client.flush();
 
   client.print("<script>");
-  client.print("function updateClock(){");
-  client.print("const now=new Date();");
-  client.print("const h=String(now.getHours()).padStart(2,'0');");
-  client.print("const m=String(now.getMinutes()).padStart(2,'0');");
-  client.print("const s=String(now.getSeconds()).padStart(2,'0');");
-  client.print("document.getElementById('clock').textContent=h+':'+m+':'+s;");
+  client.print("async function updateClock(){");
+  client.print("try{");
+  client.print("const res=await fetch('/api/time');");
+  client.print("const data=await res.json();");
+  client.print("if(data.success && data.synced){");
+  client.print("document.getElementById('clock').textContent=data.time;");
+  client.print("document.getElementById('clock').style.color='#667eea';");
+  client.print("const badge=document.getElementById('dstBadge');");
+  client.print("if(data.dst){");
+  client.print("badge.innerHTML='<span class=\"dst-badge\">☀️ Summer Time (CEST, UTC+2)</span>';");
+  client.print("badge.style.display='block';");
+  client.print("}else{");
+  client.print("badge.innerHTML='<span class=\"dst-badge\" style=\"background:#6c757d;color:white\">❄️ Winter Time (CET, UTC+1)</span>';");
+  client.print("badge.style.display='block';");
+  client.print("}");
+  client.print("}else{");
+  client.print("document.getElementById('clock').textContent='Syncing...';");
+  client.print("document.getElementById('clock').style.color='#ffc107';");
+  client.print("document.getElementById('dstBadge').style.display='none';");
+  client.print("}");
+  client.print("}catch(e){");
+  client.print("document.getElementById('clock').textContent='--:--:--';");
+  client.print("document.getElementById('clock').style.color='#dc3545';");
+  client.print("document.getElementById('dstBadge').style.display='none';");
+  client.print("console.error('Time fetch error:',e);");
+  client.print("}");
   client.print("}");
   client.flush();
-  
+
   client.print("setInterval(updateClock,1000);");
   client.print("updateClock();");
   client.print("</script>");
@@ -535,7 +870,6 @@ void handleAPIGetKeys(EthernetClient &client) {
       String value = prefs.getString(key.c_str(), "");
       if (!first) json += ",";
       json += "{\"key\":\"" + key + "\",\"value\":\"";
-      // Escape JSON special chars
       for (unsigned int j = 0; j < value.length(); j++) {
         char c = value.charAt(j);
         if (c == '"') json += "\\\"";
@@ -560,13 +894,11 @@ void handleAPIAddKey(EthernetClient &client, int contentLength) {
     return;
   }
 
-  // Read body
   String body = "";
   while (client.available() && body.length() < (unsigned)contentLength) {
     body += (char)client.read();
   }
 
-  // Parse value=...
   int valuePos = body.indexOf("value=");
   
   if (valuePos < 0) {
@@ -586,7 +918,6 @@ void handleAPIAddKey(EthernetClient &client, int contentLength) {
     return;
   }
 
-  // Trova la chiave kN più bassa disponibile
   int keyIndex = -1;
   for (int i = 0; i < MAX_KEYS; i++) {
     String key = "k" + String(i);
@@ -603,7 +934,6 @@ void handleAPIAddKey(EthernetClient &client, int contentLength) {
 
   String key = "k" + String(keyIndex);
 
-  // Save to NVS
   prefs.putString(key.c_str(), value);
   Serial.print("[NVS] Saved ");
   Serial.print(key);
@@ -620,13 +950,11 @@ void handleAPIDeleteKey(EthernetClient &client, int contentLength) {
     return;
   }
 
-  // Read body
   String body = "";
   while (client.available() && body.length() < (unsigned)contentLength) {
     body += (char)client.read();
   }
 
-  // Parse key=...
   int keyPos = body.indexOf("key=");
   if (keyPos < 0) {
     sendJSON(client, 400, "{\"success\":false,\"message\":\"Missing key\"}");
@@ -711,14 +1039,12 @@ void serveUpdatePage(EthernetClient &client) {
 void handleOTAUpload(EthernetClient &client, int contentLength, const String &contentType) {
   Serial.println("[OTA] Update requested");
 
-  // Validate content type
   if (!contentType.startsWith("multipart/form-data")) {
     Serial.println("[OTA] ERROR: Not multipart/form-data");
     sendUpdateError(client, "Invalid content type");
     return;
   }
 
-  // Extract boundary
   int bPos = contentType.indexOf("boundary=");
   if (bPos < 0) {
     Serial.println("[OTA] ERROR: Boundary not found");
@@ -731,7 +1057,6 @@ void handleOTAUpload(EthernetClient &client, int contentLength, const String &co
   Serial.print("[OTA] Boundary: ");
   Serial.println(boundary);
 
-  // Extract and verify password
   String receivedPassword;
   if (!extractPassword(client, boundary, receivedPassword)) {
     Serial.println("[OTA] ERROR: Failed to extract password");
@@ -758,7 +1083,6 @@ void handleOTAUpload(EthernetClient &client, int contentLength, const String &co
 
   Serial.println("[OTA] ✓ Password correct");
 
-  // Find firmware file part
   if (!findMultipartField(client, boundary, "update")) {
     Serial.println("[OTA] ERROR: Firmware file not found");
     sendUpdateError(client, "Firmware file not found");
@@ -767,7 +1091,6 @@ void handleOTAUpload(EthernetClient &client, int contentLength, const String &co
 
   Serial.println("[OTA] ✓ Firmware file found, starting update...");
 
-  // Initialize OTA
   if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
     Serial.println("[OTA] ERROR: Update.begin() failed");
     Update.printError(Serial);
@@ -775,7 +1098,6 @@ void handleOTAUpload(EthernetClient &client, int contentLength, const String &co
     return;
   }
 
-  // Stream firmware data
   const size_t BUF_SIZE = 1024;
   uint8_t buf[BUF_SIZE];
   size_t written = 0;
@@ -842,7 +1164,6 @@ WRITE_AND_FINISH:
     break;
   }
 
-  // Finalize update
   Serial.printf("[OTA] Finalizing update (%u bytes)...\n", (unsigned)written);
   
   if (Update.end(true)) {
@@ -909,8 +1230,6 @@ void sendJSON(EthernetClient &client, int statusCode, const String &json) {
   client.println(json);
 }
 
-/* ====== HELPER FUNCTIONS ====== */
-
 bool readLine(EthernetClient &client, String &out) {
   out = "";
   while (client.connected()) {
@@ -935,17 +1254,14 @@ bool extractPassword(EthernetClient &client, const String &boundary, String &pas
       if (!readLine(client, line)) return false;
       
       if (line.indexOf("name=\"password\"") >= 0) {
-        // Skip remaining headers
         while (true) {
           if (!readLine(client, line)) return false;
           if (line.length() == 0) break;
         }
         
-        // Read password value
         if (!readLine(client, password)) return false;
         return true;
       } else {
-        // Skip this part
         while (true) {
           if (!readLine(client, line)) return false;
           if (line.length() == 0) break;
@@ -968,14 +1284,12 @@ bool findMultipartField(EthernetClient &client, const String &boundary, const St
       if (!readLine(client, line)) return false;
       
       if (line.indexOf(searchStr) >= 0) {
-        // Skip remaining headers
         while (true) {
           if (!readLine(client, line)) return false;
           if (line.length() == 0) break;
         }
         return true;
       } else {
-        // Skip this part
         while (true) {
           if (!readLine(client, line)) return false;
           if (line.length() == 0) break;
@@ -1034,4 +1348,186 @@ int countKeys() {
 
 String getKeyByIndex(int index) {
   return "k" + String(index);
+}
+
+
+/* ====== API: INSERT (Add by value) ====== */
+void handleAPIInsert(EthernetClient &client, int contentLength) {
+  if (contentLength <= 0 || contentLength > 512) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Invalid content length\"}");
+    return;
+  }
+
+  String body = "";
+  while (client.available() && body.length() < (unsigned)contentLength) {
+    body += (char)client.read();
+  }
+
+  // Parse JSON body: {"value":"some_string"}
+  int valueStart = body.indexOf("\"value\"");
+  if (valueStart < 0) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Missing 'value' field\"}");
+    return;
+  }
+  
+  int colonPos = body.indexOf(":", valueStart);
+  int quoteStart = body.indexOf("\"", colonPos);
+  int quoteEnd = body.indexOf("\"", quoteStart + 1);
+  
+  if (quoteStart < 0 || quoteEnd < 0) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Invalid JSON format\"}");
+    return;
+  }
+  
+  String value = body.substring(quoteStart + 1, quoteEnd);
+  value.trim();
+
+  if (value.length() == 0) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Value cannot be empty\"}");
+    return;
+  }
+
+  if (value.length() > MAX_VALUE_LENGTH) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Value too long (max 128 chars)\"}");
+    return;
+  }
+
+  // Find next available key
+  int keyIndex = -1;
+  for (int i = 0; i < MAX_KEYS; i++) {
+    String key = "k" + String(i);
+    if (!prefs.isKey(key.c_str())) {
+      keyIndex = i;
+      break;
+    }
+  }
+
+  if (keyIndex < 0) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Maximum keys reached (100/100)\"}");
+    return;
+  }
+
+  String key = "k" + String(keyIndex);
+  prefs.putString(key.c_str(), value);
+  
+  Serial.print("[API] INSERT: ");
+  Serial.print(key);
+  Serial.print(" = ");
+  Serial.println(value);
+
+  String response = "{\"success\":true,\"message\":\"Value inserted\",\"key\":\"" + key + "\",\"value\":\"";
+  // Escape JSON special characters
+  for (unsigned int i = 0; i < value.length(); i++) {
+    char c = value.charAt(i);
+    if (c == '"') response += "\\\"";
+    else if (c == '\\') response += "\\\\";
+    else if (c == '\n') response += "\\n";
+    else if (c == '\r') response += "\\r";
+    else if (c == '\t') response += "\\t";
+    else response += c;
+  }
+  response += "\"}";
+  
+  sendJSON(client, 200, response);
+}
+
+/* ====== API: REMOVE (Delete by value) ====== */
+void handleAPIRemove(EthernetClient &client, int contentLength) {
+  if (contentLength <= 0 || contentLength > 512) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Invalid content length\"}");
+    return;
+  }
+
+  String body = "";
+  while (client.available() && body.length() < (unsigned)contentLength) {
+    body += (char)client.read();
+  }
+
+  // Parse JSON body: {"value":"some_string"}
+  int valueStart = body.indexOf("\"value\"");
+  if (valueStart < 0) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Missing 'value' field\"}");
+    return;
+  }
+  
+  int colonPos = body.indexOf(":", valueStart);
+  int quoteStart = body.indexOf("\"", colonPos);
+  int quoteEnd = body.indexOf("\"", quoteStart + 1);
+  
+  if (quoteStart < 0 || quoteEnd < 0) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Invalid JSON format\"}");
+    return;
+  }
+  
+  String searchValue = body.substring(quoteStart + 1, quoteEnd);
+  searchValue.trim();
+
+  if (searchValue.length() == 0) {
+    sendJSON(client, 400, "{\"success\":false,\"message\":\"Value cannot be empty\"}");
+    return;
+  }
+
+  // Search for the value in all keys
+  String foundKey = "";
+  for (int i = 0; i < MAX_KEYS; i++) {
+    String key = "k" + String(i);
+    if (prefs.isKey(key.c_str())) {
+      String storedValue = prefs.getString(key.c_str(), "");
+      if (storedValue == searchValue) {
+        foundKey = key;
+        break;
+      }
+    }
+  }
+
+  if (foundKey.length() == 0) {
+    sendJSON(client, 404, "{\"success\":false,\"message\":\"Value not found in storage\"}");
+    return;
+  }
+
+  // Delete the key
+  prefs.remove(foundKey.c_str());
+  
+  Serial.print("[API] REMOVE: ");
+  Serial.print(foundKey);
+  Serial.print(" (value: ");
+  Serial.print(searchValue);
+  Serial.println(")");
+
+  String response = "{\"success\":true,\"message\":\"Value removed\",\"key\":\"" + foundKey + "\"}";
+  sendJSON(client, 200, response);
+}
+
+/* ====== API: PRINT (List all key-value pairs) ====== */
+void handleAPIPrint(EthernetClient &client) {
+  Serial.println("[API] PRINT: Listing all key-value pairs");
+  
+  String json = "{\"success\":true,\"count\":" + String(countKeys()) + ",\"data\":[";
+  
+  bool first = true;
+  for (int i = 0; i < MAX_KEYS; i++) {
+    String key = "k" + String(i);
+    if (prefs.isKey(key.c_str())) {
+      String value = prefs.getString(key.c_str(), "");
+      
+      if (!first) json += ",";
+      json += "{\"key\":\"" + key + "\",\"value\":\"";
+      
+      // Escape JSON special characters
+      for (unsigned int j = 0; j < value.length(); j++) {
+        char c = value.charAt(j);
+        if (c == '"') json += "\\\"";
+        else if (c == '\\') json += "\\\\";
+        else if (c == '\n') json += "\\n";
+        else if (c == '\r') json += "\\r";
+        else if (c == '\t') json += "\\t";
+        else json += c;
+      }
+      json += "\"}";
+      first = false;
+    }
+  }
+  
+  json += "]}";
+  sendJSON(client, 200, json);
 }
