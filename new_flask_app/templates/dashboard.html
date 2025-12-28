@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Manager - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 20px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        }
+        .qr-result {
+            display: none;
+            margin-top: 20px;
+        }
+        .qr-image {
+            max-width: 300px;
+            margin: 20px auto;
+            display: block;
+        }
+        .qr-display {
+            display: block;
+        }
+        .status-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .status-active {
+            background-color: #28a745;
+            color: white;
+        }
+        .status-pending {
+            background-color: #ffc107;
+            color: black;
+        }
+        .status-expired {
+            background-color: #dc3545;
+            color: white;
+        }
+        .flatpickr-input {
+            cursor: pointer;
+        }
+        .top-right-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            z-index: 1000;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            max-width: 600px;
+        }
+        .device-status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.85em;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+        .device-status-badge.online {
+            background-color: #28a745;
+            color: white;
+        }
+        .device-status-badge.offline {
+            background-color: #dc3545;
+            color: white;
+        }
+        .device-status-badge.checking {
+            background-color: #6c757d;
+            color: white;
+        }
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-indicator.online {
+            background-color: #fff;
+            animation: pulse 2s infinite;
+        }
+        .status-indicator.offline {
+            background-color: #fff;
+            animation: none;
+        }
+        .status-indicator.checking {
+            background-color: #fff;
+            animation: blink 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        @keyframes blink {
+            0%, 50%, 100% {
+                opacity: 1;
+            }
+            25%, 75% {
+                opacity: 0.3;
+            }
+        }
+        .date-cell {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .devices-status-container {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-warning {
+            background-color: #ff6b6b;
+            border: none;
+            color: white;
+        }
+        .btn-warning:hover {
+            background-color: #ee5a52;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <div class="top-right-controls">
+            <div class="devices-status-container" id="devicesStatusContainer">
+                <!-- Device badges will be dynamically added here -->
+            </div>
+            <a href="/logout" class="btn btn-light">
+                <i class="fas fa-sign-out-alt"></i> Logout ({{ username }})
+            </a>
+        </div>
+
+        <h1 class="text-white text-center mb-4">
+            <i class="fas fa-qrcode"></i> QR Code Manager
+        </h1>
+
+        <!-- Create QR Code Section -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="mb-0"><i class="fas fa-plus-circle"></i> Create New QR Code</h3>
+            </div>
+            <div class="card-body">
+                <form id="qrForm">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="firstName" class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="firstName" maxlength="30" required>
+                            <small class="text-muted">Max 30 characters</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="lastName" class="form-label">Last Name</label>
+                            <input type="text" class="form-control" id="lastName" maxlength="30" required>
+                            <small class="text-muted">Max 30 characters</small>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="checkInDateTime" class="form-label">Check-In Date & Time (Y-M-D H:M:S)</label>
+                            <input type="text" class="form-control" id="checkInDateTime" placeholder="Select date and time" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="checkOutDateTime" class="form-label">Check-Out Date & Time (Y-M-D H:M:S)</label>
+                            <input type="text" class="form-control" id="checkOutDateTime" placeholder="Select date and time" required>
+                        </div>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-secondary" id="autoFillBtn">
+                            <i class="fas fa-clock"></i> Auto-Fill Current Date/Time
+                        </button>
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-paper-plane"></i> Generate & Send QR Code
+                        </button>
+                    </div>
+                </form>
+
+                <!-- QR Result -->
+                <div id="qrResult" class="qr-result">
+                    <div class="alert alert-success" role="alert">
+                        <h4 class="alert-heading"><i class="fas fa-check-circle"></i> QR Code Generated Successfully!</h4>
+                        <p id="resultMessage"></p>
+                    </div>
+                    <div class="qr-display">
+                        <img id="qrImage" class="qr-image" alt="QR Code">
+                        <div class="text-center">
+                            <p><strong>QR Data:</strong></p>
+                            <code id="qrData" style="word-break: break-all;"></code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active QR Codes Section -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h3 class="mb-0"><i class="fas fa-list"></i> Active QR Codes</h3>
+                <div>
+                    <button class="btn btn-warning me-2" id="removeExpiredBtn">
+                        <i class="fas fa-trash-alt"></i> Remove Expired <span id="expiredCount" class="badge bg-light text-dark ms-1">0</span>
+                    </button>
+                    <button class="btn btn-light" id="refreshBtn">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="loadingSpinner" class="text-center" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading QR codes...</p>
+                </div>
+                <div id="qrCodesContainer">
+                    <p class="text-center text-muted">Click refresh to load QR codes</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script>
+        // Device list from Flask
+        const DEVICES = {{ devices | tojson }};
+
+        // Global variable to store current QR codes
+        let currentQRCodes = [];
+
+        // Initialize device status badges
+        function initializeDeviceBadges() {
+            const container = document.getElementById('devicesStatusContainer');
+            container.innerHTML = '';
+            
+            DEVICES.forEach(device => {
+                if (device.enabled) {
+                    const badge = document.createElement('div');
+                    badge.className = 'device-status-badge checking';
+                    badge.id = `device-${device.name.replace(/\s+/g, '-')}`;
+                    badge.innerHTML = `
+                        <span class="status-indicator checking"></span>
+                        <span class="status-text">${device.name} - Checking...</span>
+                    `;
+                    container.appendChild(badge);
+                }
+            });
+        }
+
+        // Check all devices status via Flask backend
+        async function checkAllDevicesStatus() {
+            try {
+                const response = await fetch('/api/check_device_status', {
+                    method: 'GET'
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.devices) {
+                    data.devices.forEach(deviceStatus => {
+                        const badgeId = `device-${deviceStatus.name.replace(/\s+/g, '-')}`;
+                        const badge = document.getElementById(badgeId);
+                        if (!badge) return;
+
+                        const statusIndicator = badge.querySelector('.status-indicator');
+                        const statusText = badge.querySelector('.status-text');
+
+                        if (deviceStatus.online) {
+                            badge.className = 'device-status-badge online';
+                            statusIndicator.className = 'status-indicator online';
+                            statusText.textContent = `${deviceStatus.name} - Online`;
+                        } else {
+                            badge.className = 'device-status-badge offline';
+                            statusIndicator.className = 'status-indicator offline';
+                            statusText.textContent = `${deviceStatus.name} - Offline`;
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error checking device status:', error);
+            }
+        }
+
+        // Initialize badges and start checking
+        initializeDeviceBadges();
+        checkAllDevicesStatus(); // Check immediately
+        setInterval(checkAllDevicesStatus, 1000); // Then check every second
+
+        // Initialize date/time pickers with nice UI
+        const checkInPicker = flatpickr("#checkInDateTime", {
+            enableTime: true,
+            dateFormat: "Y-m-d H:i:S",
+            time_24hr: true,
+            minuteIncrement: 1,
+            defaultDate: new Date()
+        });
+
+        const checkOutPicker = flatpickr("#checkOutDateTime", {
+            enableTime: true,
+            dateFormat: "Y-m-d H:i:S",
+            time_24hr: true,
+            minuteIncrement: 1,
+            defaultDate: new Date(Date.now() + 4 * 60 * 60 * 1000) // +4 hours
+        });
+
+        // Auto-fill button
+        document.getElementById('autoFillBtn').addEventListener('click', function() {
+            const now = new Date();
+            const later = new Date(now.getTime() + 4 * 60 * 60 * 1000); // +4 hours
+            checkInPicker.setDate(now);
+            checkOutPicker.setDate(later);
+        });
+
+        // Format date for API (YYYY-MM-DD-HH-MM-SS)
+        function formatDateForAPI(dateStr) {
+            const date = new Date(dateStr);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${day}-${hours}-${minutes}-${seconds}`;
+        }
+
+        // Format date for display (YYYY-MM-DD HH:MM:SS)
+        function formatDateForDisplay(dateStr) {
+            // Input: 2025-12-28-14-30-00
+            // Output: 2025-12-28 14:30:00
+            const parts = dateStr.split('-');
+            if (parts.length === 6) {
+                return `${parts[0]}-${parts[1]}-${parts[2]} ${parts[3]}:${parts[4]}:${parts[5]}`;
+            }
+            return dateStr;
+        }
+
+        // Update expired count badge
+        function updateExpiredCount() {
+            const expiredCodes = currentQRCodes.filter(code => code.status === 'expired');
+            const expiredCount = expiredCodes.length;
+            document.getElementById('expiredCount').textContent = expiredCount;
+
+            // Auto-remove if more than 30 expired
+            if (expiredCount > 6) {
+                console.log(`Auto-removing ${expiredCount} expired QR codes...`);
+                removeExpiredQRCodes();
+            }
+        }
+
+        // Remove all expired QR codes
+        async function removeExpiredQRCodes() {
+            const expiredCodes = currentQRCodes.filter(code => code.status === 'expired');
+            
+            if (expiredCodes.length === 0) {
+                alert('No expired QR codes to remove.');
+                return;
+            }
+
+            const removeBtn = document.getElementById('removeExpiredBtn');
+            const originalText = removeBtn.innerHTML;
+            removeBtn.disabled = true;
+            removeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Removing...';
+
+            let successCount = 0;
+            let failCount = 0;
+
+            // Delete each expired QR code
+            for (const code of expiredCodes) {
+                try {
+                    const response = await fetch('/api/delete_qr', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            device: code.device,
+                            value: code.raw_value
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (error) {
+                    console.error('Error deleting QR code:', error);
+                    failCount++;
+                }
+            }
+
+            // Show result
+            if (failCount === 0) {
+                alert(`Successfully removed ${successCount} expired QR codes!`);
+            } else {
+                alert(`Removed ${successCount} expired QR codes. Failed to remove ${failCount}.`);
+            }
+
+            // Restore button and refresh list
+            removeBtn.disabled = false;
+            removeBtn.innerHTML = originalText;
+            loadQRCodes();
+        }
+
+        // Submit form
+        document.getElementById('qrForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const firstName = document.getElementById('firstName').value.trim();
+            const lastName = document.getElementById('lastName').value.trim();
+            const checkIn = formatDateForAPI(document.getElementById('checkInDateTime').value);
+            const checkOut = formatDateForAPI(document.getElementById('checkOutDateTime').value);
+
+            // Hide previous results
+            document.getElementById('qrResult').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/create_qr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: firstName,
+                        surname: lastName,
+                        date_in: checkIn,
+                        date_out: checkOut
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('resultMessage').textContent = data.message;
+                    document.getElementById('qrImage').src = 'data:image/png;base64,' + data.qr_image;
+                    document.getElementById('qrImage').style.display = 'block';
+                    document.getElementById('qrData').textContent = data.qr_data;
+                    document.getElementById('qrResult').style.display = 'block';
+                    document.getElementById('qrResult').querySelector('.alert').className = 'alert alert-success';
+                    document.getElementById('qrResult').querySelector('.alert-heading').innerHTML = '<i class="fas fa-check-circle"></i> QR Code Generated Successfully!';
+                    document.querySelector('.qr-display').style.display = 'block';
+                    
+                    // Refresh the list
+                    loadQRCodes();
+                } else {
+                    // Show error in the result area
+                    document.getElementById('resultMessage').textContent = data.message;
+                    document.getElementById('qrResult').style.display = 'block';
+                    document.getElementById('qrResult').querySelector('.alert').className = 'alert alert-danger';
+                    document.getElementById('qrResult').querySelector('.alert-heading').innerHTML = '<i class="fas fa-exclamation-circle"></i> Error!';
+                    document.getElementById('qrImage').style.display = 'none';
+                    document.querySelector('.qr-display').style.display = 'none';
+                }
+            } catch (error) {
+                // Show error in the result area
+                document.getElementById('resultMessage').textContent = error.message;
+                document.getElementById('qrResult').style.display = 'block';
+                document.getElementById('qrResult').querySelector('.alert').className = 'alert alert-danger';
+                document.getElementById('qrResult').querySelector('.alert-heading').innerHTML = '<i class="fas fa-exclamation-circle"></i> Error!';
+                document.getElementById('qrImage').style.display = 'none';
+                document.querySelector('.qr-display').style.display = 'none';
+            }
+        });
+
+        // Load QR codes
+        async function loadQRCodes() {
+            const container = document.getElementById('qrCodesContainer');
+            const spinner = document.getElementById('loadingSpinner');
+            
+            spinner.style.display = 'block';
+            container.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/get_all_qr_codes');
+                const data = await response.json();
+
+                spinner.style.display = 'none';
+
+                if (data.success && data.codes.length > 0) {
+                    currentQRCodes = data.codes; // Store for expired count
+                    updateExpiredCount(); // Update the badge
+
+                    let html = '<div class="table-responsive"><table class="table table-hover">';
+                    html += '<thead><tr><th>Device</th><th>Name</th><th>Surname</th><th>Check-In<br><small class="text-muted">(Y-M-D H:M:S)</small></th><th>Check-Out<br><small class="text-muted">(Y-M-D H:M:S)</small></th><th>Status</th><th>Action</th></tr></thead><tbody>';
+
+                    data.codes.forEach(code => {
+                        const statusClass = `status-${code.status}`;
+                        const dateInFormatted = formatDateForDisplay(code.date_in);
+                        const dateOutFormatted = formatDateForDisplay(code.date_out);
+                        
+                        html += `<tr>
+                            <td>${code.device}</td>
+                            <td>${code.name}</td>
+                            <td>${code.surname}</td>
+                            <td class="date-cell">${dateInFormatted}</td>
+                            <td class="date-cell">${dateOutFormatted}</td>
+                            <td><span class="status-badge ${statusClass}">${code.status.toUpperCase()}</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-danger" onclick="deleteQR('${code.device}', '${code.raw_value.replace(/'/g, "\\'")}')">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </td>
+                        </tr>`;
+                    });
+
+                    html += '</tbody></table></div>';
+                    container.innerHTML = html;
+                } else {
+                    currentQRCodes = [];
+                    updateExpiredCount();
+                    container.innerHTML = '<p class="text-center text-muted"><i class="fas fa-inbox"></i> No QR codes found. Create your first one above!</p>';
+                }
+            } catch (error) {
+                spinner.style.display = 'none';
+                container.innerHTML = '<div class="alert alert-danger">Error loading QR codes: ' + error.message + '</div>';
+            }
+        }
+
+        // Delete QR code
+        async function deleteQR(device, value) {
+            try {
+                const response = await fetch('/api/delete_qr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        device: device,
+                        value: value
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    loadQRCodes();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Remove expired button click handler
+        document.getElementById('removeExpiredBtn').addEventListener('click', removeExpiredQRCodes);
+
+        // Refresh button
+        document.getElementById('refreshBtn').addEventListener('click', loadQRCodes);
+
+        // Load on page load
+        window.addEventListener('load', loadQRCodes);
+    </script>
+</body>
+</html>
