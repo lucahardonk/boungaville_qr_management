@@ -90,7 +90,7 @@ byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 #define MAX_VALUE_LENGTH 128
 
 // Session Configuration
-#define SESSION_TIMEOUT 3600000  // 1 hour in milliseconds
+#define SESSION_TIMEOUT 60000  // 60 seconds in milliseconds
 
 /* ====== SESSION MANAGEMENT ====== */
 
@@ -448,6 +448,12 @@ void loop() {
       if (secondSpace > 0) {
         requestMethod = currentLine.substring(0, firstSpace);
         requestPath = currentLine.substring(firstSpace + 1, secondSpace);
+        
+        // Remove query string so "/?error=1" becomes "/"
+        int qPos = requestPath.indexOf('?');
+        if (qPos >= 0) {
+          requestPath = requestPath.substring(0, qPos);
+        }
       }
     }
 
@@ -661,10 +667,12 @@ void serveLoginPage(EthernetClient &client) {
   client.print("updateClock();");
   
   // Check for error parameter in URL
+  client.print("window.addEventListener('DOMContentLoaded',function(){");
   client.print("const urlParams=new URLSearchParams(window.location.search);");
   client.print("if(urlParams.get('error')==='1'){");
-  client.print("showError('Invalid password. Please try again.');");
+  client.print("showError('❌ Invalid password. Please try again.');");
   client.print("}");
+  client.print("});");
   
   client.print("</script>");
   client.print("</div></body></html>");
