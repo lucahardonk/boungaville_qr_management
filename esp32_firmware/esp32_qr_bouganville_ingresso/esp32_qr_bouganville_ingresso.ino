@@ -82,6 +82,16 @@ const char* ADMIN_PASSWORD = "admin123";         // ⚠️ CHANGE THIS IN PRODUC
 // Network Configuration
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 
+
+// QR Scanner Configuration (QRSerial) 
+HardwareSerial QRSerial(2); 
+// QR Scanner Configuration (UART2)
+#define GM65_RX 17   // TX GM65 -> RX2 ESP32
+#define GM65_TX 16   // RX GM65 -> TX2 ESP32 (optional)
+  
+// Relay Configuration  
+#define RELAY_PIN   18
+
 // Server Configuration
 #define SERVER_PORT 80
 
@@ -146,6 +156,12 @@ EthernetServer server(SERVER_PORT);
 Preferences prefs;
 bool timeIsSynced = false;
 
+
+// QR Scanner Variables  
+String qrBuffer = "";  
+String lastScannedQR = "";  
+unsigned long lastScanTime = 0;
+
 /* ====== FUNCTION PROTOTYPES ====== */
 
 // HTTP Handlers
@@ -176,6 +192,73 @@ String urlDecode(String str);
 String htmlEscape(String str);
 int countKeys();
 String getKeyByIndex(int index);
+
+String readQR();  
+void toggleRelay();
+
+
+/* ====== QR SCANNER FUNCTIONS ====== */
+
+String readQR() {
+  // Check if data is available
+  if (QRSerial.available()) {
+    Serial.print("[DEBUG] Bytes available: ");
+    Serial.println(QRSerial.available());
+  }
+  
+  // Read data from UART2 (QRSerial)
+  while (QRSerial.available()) {
+    char c = QRSerial.read();
+    
+    // DEBUG: print every character received
+    Serial.print("[DEBUG] Received char: '");
+    Serial.print(c);
+    Serial.print("' (0x");
+    Serial.print((int)c, HEX);
+    Serial.println(")");
+    
+    // Most QR scanners send data ending with newline or carriage return
+    if (c == '\n' || c == '\r') {
+      if (qrBuffer.length() > 0) {
+        String result = qrBuffer;
+        qrBuffer = "";  // Clear buffer
+        
+        // Store as last scanned
+        lastScannedQR = result;
+        lastScanTime = millis();
+        
+        // Print to serial monitor
+        Serial.println("\n========================================");
+        Serial.println("[QR] QR Code Scanned!");
+        Serial.print("[QR] Data: ");
+        Serial.println(result);
+        Serial.println("========================================\n");
+        
+        return result;
+      }
+    } else {
+      // Add character to buffer
+      qrBuffer += c;
+      Serial.print("[DEBUG] Buffer now: ");
+      Serial.println(qrBuffer);
+    }
+  }
+  
+  return "";  // Return empty string if no complete QR code read
+}
+
+void toggleRelay() {
+  Serial.println("[RELAY] Activating relay...");
+  
+  // Turn relay ON
+  digitalWrite(RELAY_PIN, HIGH);
+  delay(500);  // Keep it on for 500ms
+  
+  // Turn relay OFF
+  digitalWrite(RELAY_PIN, LOW);
+  
+  Serial.println("[RELAY] Relay deactivated");
+}
 
 /* ====== TIME SYNC FUNCTIONS ====== */
 
@@ -365,6 +448,20 @@ void setup() {
   currentSession.isAuthenticated = false;
   currentSession.lastActivity = 0;
 
+  // Initialize Relay Pin
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);  // Make sure relay starts OFF
+  Serial.println("[INIT] Relay initialized");
+
+  // Initialize QRSerial for QR Scanner
+  // Initialize UART2 for GM65 QR Scanner
+  QRSerial.begin(9600, SERIAL_8N1, GM65_RX, GM65_TX);
+  Serial.println("[INIT] UART2 initialized for GM65 QR Scanner");
+  Serial.print("[INIT] GM65 RX: GPIO");
+  Serial.print(GM65_RX);
+  Serial.print(", GM65 TX: GPIO");
+  Serial.println(GM65_TX);
+
   // Initialize NVS
   prefs.begin("keys", false);
   Serial.print("[INIT] NVS initialized. Keys stored: ");
@@ -406,6 +503,14 @@ void setup() {
 /* ====== MAIN LOOP ====== */
 
 void loop() {
+
+  String qrCode = readQR();  
+  if (qrCode.length() > 0) {  
+    // QR code was scanned!  
+    toggleRelay();
+    Serial.println(qrCode);
+  }
+  
   // Periodic time re-sync (every 1 hour)
   static unsigned long lastSync = 0;
   if (millis() - lastSync > 3600000) {
@@ -417,11 +522,12 @@ void loop() {
     }
     lastSync = millis();
   }
+
   
   EthernetClient client = server.available();
   if (!client) return;
 
-  Serial.println("[CLIENT] New connection");
+  //Serial.println("[CLIENT] New connection");
   
   // Parse HTTP request
   bool currentLineIsBlank = true;
@@ -472,11 +578,11 @@ void loop() {
 
     // End of headers
     if (c == '\n' && currentLineIsBlank) {
-      
+      /*
       Serial.print("[REQUEST] ");
       Serial.print(requestMethod);
       Serial.print(" ");
-      Serial.println(requestPath);
+      Serial.println(requestPath);*/
 
       // Extract session ID from cookie
       String sessionId = extractCookie(cookieHeader, "sessionId");
@@ -551,7 +657,7 @@ void loop() {
 
   delay(1);
   client.stop();
-  Serial.println("[CLIENT] Disconnected\n");
+  //Serial.println("[CLIENT] Disconnected\n");
 }
 
 /* ====== HTTP HANDLERS ====== */
