@@ -64,11 +64,11 @@
 /* ====== GLOBAL VARIABLE DEFINITIONS ====== */
 
 // System Configuration
-const char* SYSTEM_NAME = "Restaurant Manager";  // ⚠️ CHANGE THIS FOR YOUR DEPLOYMENT
+const char* SYSTEM_NAME = "QRCode Cancello";  // ⚠️ CHANGE THIS FOR YOUR DEPLOYMENT
 const char* ADMIN_PASSWORD = "admin123";         // ⚠️ CHANGE THIS IN PRODUCTION!
 
 // Network Configuration
-byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xAB };
 
 // Global Objects
 EthernetServer server(SERVER_PORT);
