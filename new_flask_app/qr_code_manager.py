@@ -21,9 +21,19 @@ app.secret_key = 'change-this-secret-key-in-production'  # ⚠️ CHANGE THIS!
 # Configuration
 DEVICES = [
     {
-        'name': 'Restaurant Manager',
+        'name': 'QRCode Corridoio',
         'url': 'http://192.168.1.97',
         'enabled': True
+    },
+    {
+        'name': 'QRCode Cancello',
+        'url': 'http://192.168.1.97',
+        'enabled': False
+    }
+    {
+        'name': 'QRCode porta blindata',
+        'url': 'http://192.168.1.97',
+        'enabled': False
     }
 ]
 
