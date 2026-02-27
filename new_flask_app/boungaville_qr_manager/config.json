@@ -1,0 +1,17 @@
+{
+  "name": "Boungaville QR Management",
+  "slug": "boungaville_qr_manager",
+  "version": "1.0.1",
+  "description": "QR code access manager",
+  "startup": "services",
+  "boot": "auto",
+  "arch": ["amd64", "aarch64"],
+  "ingress": true,
+  "ingress_port": 8086,
+  "panel_icon": "mdi:qrcode",
+  "ports": {
+    "8086/tcp": 8086
+  },
+  "options": {},
+  "schema": {}
+}
