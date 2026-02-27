@@ -22,18 +22,18 @@ app.secret_key = 'change-this-secret-key-in-production'  # ⚠️ CHANGE THIS!
 DEVICES = [
     {
         'name': 'QRCode Corridoio',
-        'url': 'http://192.168.1.97',
+        'url': 'http://192.168.1.30',
         'enabled': True
     },
     {
         'name': 'QRCode Cancello',
-        'url': 'http://192.168.1.97',
-        'enabled': False
-    }
+        'url': 'http://192.168.1.31',
+        'enabled': True
+    },
     {
         'name': 'QRCode porta blindata',
-        'url': 'http://192.168.1.97',
-        'enabled': False
+        'url': 'http://192.168.1.32',
+        'enabled': True
     }
 ]
 

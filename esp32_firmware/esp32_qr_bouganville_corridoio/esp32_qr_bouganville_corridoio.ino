@@ -32,28 +32,28 @@
  * ============================================================================
  * 
  * 1. Insert a QR code (auto-assigns key like k0, k1, k2...):
- *    curl -X POST http://192.168.1.97/api/insert \
+ *    curl -X POST http://192.168.1.30/api/insert \
  *      -H "Content-Type: application/json" \
  *      -d '{"value":"table-5-boungaville"}'
  * 
  * 2. Print all stored QR codes:
- *    curl http://192.168.1.97/api/print
+ *    curl http://192.168.1.30/api/print
  * 
  * 3. Remove a QR code by value:
- *    curl -X POST http://192.168.1.97/api/remove \
+ *    curl -X POST http://192.168.1.30/api/remove \
  *      -H "Content-Type: application/json" \
  *      -d '{"value":"table-5-boungaville"}'
  * 
  * 4. Pretty print with jq:
- *    curl http://192.168.1.97/api/print | jq
+ *    curl http://192.168.1.30/api/print | jq
  * 
  * 5. Get current Italian time with DST info:
- *    curl http://192.168.1.97/api/time
+ *    curl http://192.168.1.30/api/time
  * 
  * 6. Get current Italian time (pretty printed):
- *    curl http://192.168.1.97/api/time | jq
+ *    curl http://192.168.1.30/api/time | jq
  * 
- * Note: Replace 192.168.1.97 with your ESP32's actual IP address
+ * Note: Replace 192.168.1.30 with your ESP32's actual IP address
  * 
  ******************************************************************************
  */

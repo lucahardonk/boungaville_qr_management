@@ -64,7 +64,7 @@
 /* ====== GLOBAL VARIABLE DEFINITIONS ====== */
 
 // System Configuration
-const char* SYSTEM_NAME = "QRCode porta blindata";  // ⚠️ CHANGE THIS FOR YOUR DEPLOYMENT
+const char* SYSTEM_NAME = "QRCode porta ingresso blindata";  // ⚠️ CHANGE THIS FOR YOUR DEPLOYMENT
 const char* ADMIN_PASSWORD = "admin123";         // ⚠️ CHANGE THIS IN PRODUCTION!
 
 // Network Configuration
