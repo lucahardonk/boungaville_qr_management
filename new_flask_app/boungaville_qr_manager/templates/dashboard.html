@@ -68,17 +68,18 @@
         .flatpickr-input {
             cursor: pointer;
         }
-        .top-right-controls {
-            position: absolute;
-            top: 20px;
-            right: 20px;
+        .top-navbar {
             display: flex;
-            gap: 10px;
             align-items: center;
-            z-index: 1000;
-            flex-wrap: wrap;
             justify-content: flex-end;
-            max-width: 600px;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding: 12px 20px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 15px;
+            backdrop-filter: blur(6px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
         }
         .device-status-badge {
             padding: 8px 16px;
@@ -122,20 +123,12 @@
             animation: blink 1s infinite;
         }
         @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.5;
-            }
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
         @keyframes blink {
-            0%, 50%, 100% {
-                opacity: 1;
-            }
-            25%, 75% {
-                opacity: 0.3;
-            }
+            0%, 50%, 100% { opacity: 1; }
+            25%, 75% { opacity: 0.3; }
         }
         .date-cell {
             font-family: 'Courier New', monospace;
@@ -143,8 +136,9 @@
         }
         .devices-status-container {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             flex-wrap: wrap;
+            align-items: center;
         }
         .btn-warning {
             background-color: #ff6b6b;
@@ -159,18 +153,19 @@
 </head>
 <body>
     <div class="dashboard-container">
-        <div class="top-right-controls">
-            <div class="devices-status-container" id="devicesStatusContainer">
-                <!-- Device badges will be dynamically added here -->
-            </div>
-            <a href="/logout" class="btn btn-light">
-                <i class="fas fa-sign-out-alt"></i> Logout ({{ username }})
-            </a>
-        </div>
 
         <h1 class="text-white text-center mb-4">
             <i class="fas fa-qrcode"></i> QR Code Manager
         </h1>
+
+        <div class="top-navbar">
+            <div class="devices-status-container" id="devicesStatusContainer">
+                <!-- Device badges will be dynamically added here -->
+            </div>
+            <a href="/logout" class="btn btn-light ms-2">
+                <i class="fas fa-sign-out-alt"></i> Logout ({{ username }})
+            </a>
+        </div>
 
         <!-- Create QR Code Section -->
         <div class="card">
@@ -201,10 +196,7 @@
                             <input type="text" class="form-control" id="checkOutDateTime" placeholder="Select date and time" required>
                         </div>
                     </div>
-                    <div class="d-grid gap-2">
-                        <button type="button" class="btn btn-secondary" id="autoFillBtn">
-                            <i class="fas fa-clock"></i> Auto-Fill Current Date/Time
-                        </button>
+                    <div class="d-grid">
                         <button type="submit" class="btn btn-primary btn-lg">
                             <i class="fas fa-paper-plane"></i> Generate & Send QR Code
                         </button>
@@ -268,7 +260,6 @@
         function initializeDeviceBadges() {
             const container = document.getElementById('devicesStatusContainer');
             container.innerHTML = '';
-            
             DEVICES.forEach(device => {
                 if (device.enabled) {
                     const badge = document.createElement('div');
@@ -286,21 +277,15 @@
         // Check all devices status via Flask backend
         async function checkAllDevicesStatus() {
             try {
-                const response = await fetch('/api/check_device_status', {
-                    method: 'GET'
-                });
-
+                const response = await fetch('/api/check_device_status', { method: 'GET' });
                 const data = await response.json();
-
                 if (data.success && data.devices) {
                     data.devices.forEach(deviceStatus => {
                         const badgeId = `device-${deviceStatus.name.replace(/\s+/g, '-')}`;
                         const badge = document.getElementById(badgeId);
                         if (!badge) return;
-
                         const statusIndicator = badge.querySelector('.status-indicator');
                         const statusText = badge.querySelector('.status-text');
-
                         if (deviceStatus.online) {
                             badge.className = 'device-status-badge online';
                             statusIndicator.className = 'status-indicator online';
@@ -319,16 +304,20 @@
 
         // Initialize badges and start checking
         initializeDeviceBadges();
-        checkAllDevicesStatus(); // Check immediately
-        setInterval(checkAllDevicesStatus, 1000); // Then check every second
+        checkAllDevicesStatus();
+        setInterval(checkAllDevicesStatus, 1000);
 
-        // Initialize date/time pickers with nice UI
+        // Initialize date/time pickers — prefilled with today and today+1 day
+        const now = new Date();
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
         const checkInPicker = flatpickr("#checkInDateTime", {
             enableTime: true,
             dateFormat: "Y-m-d H:i:S",
             time_24hr: true,
             minuteIncrement: 1,
-            defaultDate: new Date()
+            defaultDate: now
         });
 
         const checkOutPicker = flatpickr("#checkOutDateTime", {
@@ -336,15 +325,7 @@
             dateFormat: "Y-m-d H:i:S",
             time_24hr: true,
             minuteIncrement: 1,
-            defaultDate: new Date(Date.now() + 4 * 60 * 60 * 1000) // +4 hours
-        });
-
-        // Auto-fill button
-        document.getElementById('autoFillBtn').addEventListener('click', function() {
-            const now = new Date();
-            const later = new Date(now.getTime() + 4 * 60 * 60 * 1000); // +4 hours
-            checkInPicker.setDate(now);
-            checkOutPicker.setDate(later);
+            defaultDate: tomorrow
         });
 
         // Format date for API (YYYY-MM-DD-HH-MM-SS)
@@ -361,8 +342,6 @@
 
         // Format date for display (YYYY-MM-DD HH:MM:SS)
         function formatDateForDisplay(dateStr) {
-            // Input: 2025-12-28-14-30-00
-            // Output: 2025-12-28 14:30:00
             const parts = dateStr.split('-');
             if (parts.length === 6) {
                 return `${parts[0]}-${parts[1]}-${parts[2]} ${parts[3]}:${parts[4]}:${parts[5]}`;
@@ -375,8 +354,6 @@
             const expiredCodes = currentQRCodes.filter(code => code.status === 'expired');
             const expiredCount = expiredCodes.length;
             document.getElementById('expiredCount').textContent = expiredCount;
-
-            // Auto-remove if more than 30 expired
             if (expiredCount > 6) {
                 console.log(`Auto-removing ${expiredCount} expired QR codes...`);
                 removeExpiredQRCodes();
@@ -386,54 +363,35 @@
         // Remove all expired QR codes
         async function removeExpiredQRCodes() {
             const expiredCodes = currentQRCodes.filter(code => code.status === 'expired');
-            
             if (expiredCodes.length === 0) {
                 alert('No expired QR codes to remove.');
                 return;
             }
-
             const removeBtn = document.getElementById('removeExpiredBtn');
             const originalText = removeBtn.innerHTML;
             removeBtn.disabled = true;
             removeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Removing...';
-
             let successCount = 0;
             let failCount = 0;
-
-            // Delete each expired QR code
             for (const code of expiredCodes) {
                 try {
                     const response = await fetch('/api/delete_qr', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            device: code.device,
-                            value: code.raw_value
-                        })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ device: code.device, value: code.raw_value })
                     });
-
                     const data = await response.json();
-                    if (data.success) {
-                        successCount++;
-                    } else {
-                        failCount++;
-                    }
+                    if (data.success) { successCount++; } else { failCount++; }
                 } catch (error) {
                     console.error('Error deleting QR code:', error);
                     failCount++;
                 }
             }
-
-            // Show result
             if (failCount === 0) {
                 alert(`Successfully removed ${successCount} expired QR codes!`);
             } else {
                 alert(`Removed ${successCount} expired QR codes. Failed to remove ${failCount}.`);
             }
-
-            // Restore button and refresh list
             removeBtn.disabled = false;
             removeBtn.innerHTML = originalText;
             loadQRCodes();
@@ -442,31 +400,18 @@
         // Submit form
         document.getElementById('qrForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            
             const firstName = document.getElementById('firstName').value.trim();
             const lastName = document.getElementById('lastName').value.trim();
             const checkIn = formatDateForAPI(document.getElementById('checkInDateTime').value);
             const checkOut = formatDateForAPI(document.getElementById('checkOutDateTime').value);
-
-            // Hide previous results
             document.getElementById('qrResult').style.display = 'none';
-
             try {
                 const response = await fetch('/api/create_qr', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        name: firstName,
-                        surname: lastName,
-                        date_in: checkIn,
-                        date_out: checkOut
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: firstName, surname: lastName, date_in: checkIn, date_out: checkOut })
                 });
-
                 const data = await response.json();
-
                 if (data.success) {
                     document.getElementById('resultMessage').textContent = data.message;
                     document.getElementById('qrImage').src = 'data:image/png;base64,' + data.qr_image;
@@ -476,11 +421,8 @@
                     document.getElementById('qrResult').querySelector('.alert').className = 'alert alert-success';
                     document.getElementById('qrResult').querySelector('.alert-heading').innerHTML = '<i class="fas fa-check-circle"></i> QR Code Generated Successfully!';
                     document.querySelector('.qr-display').style.display = 'block';
-                    
-                    // Refresh the list
                     loadQRCodes();
                 } else {
-                    // Show error in the result area
                     document.getElementById('resultMessage').textContent = data.message;
                     document.getElementById('qrResult').style.display = 'block';
                     document.getElementById('qrResult').querySelector('.alert').className = 'alert alert-danger';
@@ -489,7 +431,6 @@
                     document.querySelector('.qr-display').style.display = 'none';
                 }
             } catch (error) {
-                // Show error in the result area
                 document.getElementById('resultMessage').textContent = error.message;
                 document.getElementById('qrResult').style.display = 'block';
                 document.getElementById('qrResult').querySelector('.alert').className = 'alert alert-danger';
@@ -503,28 +444,32 @@
         async function loadQRCodes() {
             const container = document.getElementById('qrCodesContainer');
             const spinner = document.getElementById('loadingSpinner');
-            
             spinner.style.display = 'block';
             container.innerHTML = '';
-
             try {
                 const response = await fetch('/api/get_all_qr_codes');
                 const data = await response.json();
-
                 spinner.style.display = 'none';
-
                 if (data.success && data.codes.length > 0) {
-                    currentQRCodes = data.codes; // Store for expired count
-                    updateExpiredCount(); // Update the badge
+                    currentQRCodes = data.codes;
+
+                    // Sort: active first, then pending, then expired — within each group sort by date_in ascending
+                    const statusOrder = { 'active': 0, 'pending': 1, 'expired': 2 };
+                    currentQRCodes.sort((a, b) => {
+                        const statusDiff = statusOrder[a.status] - statusOrder[b.status];
+                        if (statusDiff !== 0) return statusDiff;
+                        return a.date_in.localeCompare(b.date_in);
+                    });
+
+                    updateExpiredCount();
 
                     let html = '<div class="table-responsive"><table class="table table-hover">';
                     html += '<thead><tr><th>Device</th><th>Name</th><th>Surname</th><th>Check-In<br><small class="text-muted">(Y-M-D H:M:S)</small></th><th>Check-Out<br><small class="text-muted">(Y-M-D H:M:S)</small></th><th>Status</th><th>Action</th></tr></thead><tbody>';
 
-                    data.codes.forEach(code => {
+                    currentQRCodes.forEach(code => {
                         const statusClass = `status-${code.status}`;
                         const dateInFormatted = formatDateForDisplay(code.date_in);
                         const dateOutFormatted = formatDateForDisplay(code.date_out);
-                        
                         html += `<tr>
                             <td>${code.device}</td>
                             <td>${code.name}</td>
@@ -555,20 +500,15 @@
 
         // Delete QR code
         async function deleteQR(device, value) {
+            const confirmed = confirm(`Are you sure you want to delete this QR code?\n\nDevice: ${device}`);
+            if (!confirmed) return;
             try {
                 const response = await fetch('/api/delete_qr', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        device: device,
-                        value: value
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ device: device, value: value })
                 });
-
                 const data = await response.json();
-
                 if (data.success) {
                     loadQRCodes();
                 } else {

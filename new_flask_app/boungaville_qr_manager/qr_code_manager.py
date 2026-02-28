@@ -22,23 +22,23 @@ app.secret_key = 'change-this-secret-key-in-production'  # ⚠️ CHANGE THIS!
 DEVICES = [
     {
         'name': 'QRCode Corridoio',
-        'url': 'http://192.168.1.30',
+        'url': 'http://192.168.1.65',
         'enabled': True
     },
     {
         'name': 'QRCode Cancello',
-        'url': 'http://192.168.1.31',
+        'url': 'http://192.168.1.70',
         'enabled': True
     },
     {
-        'name': 'QRCode porta blindata',
-        'url': 'http://192.168.1.32',
+        'name': 'QRCode porta Ingretsso Bounganville',
+        'url': 'http://192.168.1.73',
         'enabled': True
     }
 ]
 
 DEFAULT_USERNAME = 'admin'
-DEFAULT_PASSWORD = 'admin123'  # ⚠️ CHANGE THIS!
+DEFAULT_PASSWORD = 'EHwnt.QRcd!2026'  # ⚠️ CHANGE THIS!
 
 # Authentication decorator
 def login_required(f):
