@@ -106,7 +106,7 @@ void setup() {
   Serial.println("[INIT] Relay initialized");
 
   // Initialize UART2 for GM65 QR Scanner
-  QRSerial.begin(9600, SERIAL_8N1, GM65_RX, GM65_TX);
+  QRSerial.begin(4800, SERIAL_8N1, GM65_RX, GM65_TX);
   Serial.println("[INIT] UART2 initialized for GM65 QR Scanner");
   Serial.print("[INIT] GM65 RX: GPIO");
   Serial.print(GM65_RX);
