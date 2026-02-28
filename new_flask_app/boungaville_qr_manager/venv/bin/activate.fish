@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /mnt/c/Users/lucah/Documents/Projects/boungaville_qr_management/new_flask_app/venv
+set -gx VIRTUAL_ENV /mnt/c/Users/lucah/Documents/Projects/boungaville_qr_management/new_flask_app/boungaville_qr_manager/venv
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH

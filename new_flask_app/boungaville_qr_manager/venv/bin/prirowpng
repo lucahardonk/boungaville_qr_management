@@ -1,4 +1,4 @@
-#!/mnt/c/Users/lucah/Documents/Projects/boungaville_qr_management/new_flask_app/venv/bin/python3
+#!/mnt/c/Users/lucah/Documents/Projects/boungaville_qr_management/new_flask_app/boungaville_qr_manager/venv/bin/python3
 
 # http://www.python.org/doc/2.4.4/lib/module-itertools.html
 import itertools
