@@ -1191,7 +1191,8 @@ void handleAPIPrint(EthernetClient &client) {
 }
 
 void handleAPILastScan(EthernetClient &client) {
-  String json = "{\"lastScan\":\"" + lastScannedQR + "\"}";
+  String json = "{\"lastScan\":\"" + lastScannedQR + "\",\"scanCount\":" + String(scanCounter) + "}";
+
   sendJSON(client, 200, json);
 }
 

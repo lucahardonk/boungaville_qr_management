@@ -1,6 +1,15 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.db
+
+# Virtual Environments
+venv/
+env/
+.venv/
+ENV/
 
 # Environment variables
 .env
@@ -13,4 +22,8 @@ postgres_data/
 
 # Flask cache
 instance/
-*.db
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/

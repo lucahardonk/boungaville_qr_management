@@ -81,6 +81,7 @@ HardwareSerial QRSerial(2);
 String qrBuffer = "";
 String lastScannedQR = "";
 unsigned long lastScanTime = 0;
+unsigned long scanCounter = 0;
 
 /* ====== SETUP ====== */
 
@@ -179,6 +180,7 @@ void loop() {
               Serial.println(storedValue);
               
               toggleRelay();
+              scanCounter++;
               found = true;
               break;
             }

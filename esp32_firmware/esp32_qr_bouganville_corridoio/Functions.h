@@ -67,6 +67,7 @@ extern HardwareSerial QRSerial;
 extern String qrBuffer;
 extern String lastScannedQR;
 extern unsigned long lastScanTime;
+extern unsigned long scanCounter;
 
 /* ====== SESSION MANAGEMENT ====== */
 
