@@ -74,6 +74,41 @@ are configured in `qr_code_manager.py` (the `DEVICES` list):
    login prompt (HTTP Basic Auth) — enter the username and password from your `.env`
    file.
 
+## Running with Docker
+
+### Build the image
+```bash
+cd new_flask_app/boungaville_qr_manager
+docker build -t boungaville-qr-manager .
+```
+
+### Run the container
+Pass credentials via `--env-file` (recommended — `.env` is never baked into the image):
+```bash
+docker run --rm -p 8086:8086 --env-file .env boungaville-qr-manager
+```
+
+Or pass them directly with `-e` flags:
+```bash
+docker run --rm -p 8086:8086 \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_PASSWORD=your-strong-password \
+  boungaville-qr-manager
+```
+
+Then open `http://localhost:8086` in your browser. A login dialog will appear (HTTP Basic Auth) — enter your username and password.
+
+### Testing locally without Docker
+```bash
+cd new_flask_app/boungaville_qr_manager
+pip install -r requirements.txt
+cp .env.example .env        # then edit .env and set your password
+python qr_code_manager.py
+```
+Open `http://localhost:8086` — the browser will prompt for credentials.
+
+> **Note:** The QR reader devices (192.168.1.65, 192.168.1.70, 192.168.1.73) must be reachable from the machine running the container. If you are running Docker on a different network segment, ensure routing/VPN is configured accordingly.
+
 ## Configuration
 
 The list of QR Code Reader devices lives in the `DEVICES` list near the top of

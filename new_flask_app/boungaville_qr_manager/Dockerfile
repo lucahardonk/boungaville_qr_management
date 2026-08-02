@@ -1,3 +1,11 @@
+# ─────────────────────────────────────────────────────────────────
+# Boungaville QR Manager — Docker image
+# Credentials are NOT baked into the image.
+# Pass them at runtime:
+#   docker run --env-file .env ...
+# or individually:
+#   docker run -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=secret ...
+# ─────────────────────────────────────────────────────────────────
 FROM python:3.11-slim
 
 WORKDIR /app
