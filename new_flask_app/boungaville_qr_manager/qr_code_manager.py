@@ -5,9 +5,9 @@ Version: 1.6 - Restored HTML login page, credentials from .env
 Date: 2026-08-02
 """
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import qrcode
 import io
@@ -22,18 +22,63 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Secret key for session signing — load from .env
-app.secret_key = os.getenv('SECRET_KEY', 'change-this-in-production')
 
-# Credentials are loaded from the environment (.env file).
-# ADMIN_USERNAME defaults to 'admin'; ADMIN_PASSWORD has no default and must be set.
-ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
+def _load_credentials():
+    """Read admin credentials.
+
+    Primary source: Home Assistant add-on options at /data/options.json.
+    Fallback: environment variables loaded from a local .env file.
+    """
+    username = None
+    password = None
+
+    # Primary source: HA add-on options
+    options_path = '/data/options.json'
+    try:
+        if os.path.exists(options_path):
+            with open(options_path, 'r') as f:
+                options = json.load(f)
+            username = options.get('ADMIN_USERNAME') or options.get('admin_username')
+            password = options.get('ADMIN_PASSWORD') or options.get('admin_password')
+    except Exception as e:
+        print(f"Could not read {options_path}: {e}")
+
+    # Fallback: .env / environment variables
+    if not username:
+        username = os.getenv('ADMIN_USERNAME', 'admin')
+    if not password:
+        password = os.getenv('ADMIN_PASSWORD')
+
+    return username, password
+
+
+ADMIN_USERNAME, ADMIN_PASSWORD = _load_credentials()
 
 if not ADMIN_PASSWORD:
     raise RuntimeError(
-        "ADMIN_PASSWORD is not set. Copy .env.example to .env and set ADMIN_PASSWORD."
+        "ADMIN_PASSWORD is not set. Set it in the HA add-on options "
+        "(/data/options.json) or copy .env.example to .env and set ADMIN_PASSWORD."
     )
+
+# --- Simple in-memory authentication (no sessions / cookies) ---
+# This avoids the login loop caused by the HA Ingress proxy mishandling cookies.
+# A single module-level flag tracks whether someone is logged in, and it
+# automatically expires 5 minutes after login.
+logged_in = False
+login_time = None
+SESSION_TIMEOUT = timedelta(minutes=5)
+
+
+def is_authenticated():
+    """Return True if logged in and the 5-minute window has not elapsed."""
+    global logged_in, login_time
+    if logged_in and login_time is not None:
+        if datetime.now() - login_time < SESSION_TIMEOUT:
+            return True
+    # Expired or never logged in
+    logged_in = False
+    login_time = None
+    return False
 
 # Configuration
 DEVICES = [
@@ -55,11 +100,11 @@ DEVICES = [
 ]
 
 
-# Authentication decorator (session-based login)
+# Authentication decorator (simple in-memory flag with 5-minute timeout)
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'logged_in' not in session:
+        if not is_authenticated():
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -67,18 +112,18 @@ def login_required(f):
 
 @app.route('/')
 def index():
-    if 'logged_in' in session:
+    if is_authenticated():
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    global logged_in, login_time
     if request.method == 'POST':
-        username = request.form.get('username', '')
         password = request.form.get('password', '')
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-            session['logged_in'] = True
-            session['username'] = username
+        if password == ADMIN_PASSWORD:
+            logged_in = True
+            login_time = datetime.now()
             return redirect(url_for('dashboard'))
         else:
             return render_template('login.html', error='Invalid credentials', default_username=ADMIN_USERNAME)
@@ -86,13 +131,15 @@ def login():
 
 @app.route('/logout')
 def logout():
-    session.clear()
+    global logged_in, login_time
+    logged_in = False
+    login_time = None
     return redirect(url_for('login'))
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    return render_template('dashboard.html', devices=DEVICES, username=session.get('username'))
+    return render_template('dashboard.html', devices=DEVICES, username=ADMIN_USERNAME)
 
 @app.route('/api/create_qr', methods=['POST'])
 @login_required
