@@ -11,9 +11,10 @@ dashboard you can:
 - Delete a QR code from a specific device.
 - Monitor the online/offline status of each reader.
 
-Authentication is handled with **stateless HTTP Basic Auth** — the browser prompts for a
-username and password on the first request. There are no sessions or cookies, and the
-credentials are read from a local `.env` file.
+Authentication is handled with a **custom HTML login page** — the app shows a styled login
+form where the username is pre-filled and you only need to enter your password. Sessions are
+used to keep you logged in across requests. Credentials are read from a local `.env` file and
+never hardcoded in the source.
 
 ## QR Code Reader devices
 
@@ -70,13 +71,19 @@ are configured in `qr_code_manager.py` (the `DEVICES` list):
 
 5. **Open the dashboard**
 
-   Visit [http://localhost:8086](http://localhost:8086). Your browser will show a native
-   login prompt (HTTP Basic Auth) — enter the username and password from your `.env`
-   file.
+   Visit [http://localhost:8086](http://localhost:8086). You will see the **QR Code Manager
+   login page** — the username is pre-filled as `admin`. Enter the password you set in `.env`
+   and click **Login**.
 
 ## Running with Docker
 
 ### Build the image
+
+> **Always `git pull` before rebuilding** to make sure Docker uses the latest code:
+> ```bash
+> git pull origin feature/simplify-auth-dotenv   # or main, once the PR is merged
+> ```
+
 ```bash
 cd new_flask_app/boungaville_qr_manager
 docker build -t boungaville-qr-manager .
@@ -96,7 +103,7 @@ docker run --rm -p 8086:8086 \
   boungaville-qr-manager
 ```
 
-Then open `http://localhost:8086` in your browser. A login dialog will appear (HTTP Basic Auth) — enter your username and password.
+Then open `http://localhost:8086` in your browser. The **QR Code Manager login page** will appear — the username is pre-filled, just enter your password.
 
 ### Testing locally without Docker
 ```bash
@@ -105,7 +112,7 @@ pip install -r requirements.txt
 cp .env.example .env        # then edit .env and set your password
 python qr_code_manager.py
 ```
-Open `http://localhost:8086` — the browser will prompt for credentials.
+Open `http://localhost:8086` — you will see the login page. Enter your credentials and click **Login**.
 
 > **Note:** The QR reader devices (192.168.1.65, 192.168.1.70, 192.168.1.73) must be reachable from the machine running the container. If you are running Docker on a different network segment, ensure routing/VPN is configured accordingly.
 
@@ -139,6 +146,6 @@ Restart the app after changing `DEVICES`.
   listed in `.gitignore`; only `.env.example` (with placeholder values) is tracked.
 - **Change the default password.** Do not ship `your-strong-password-here` — set a strong,
   unique `ADMIN_PASSWORD`.
-- HTTP Basic Auth sends credentials on every request. On any network you don't fully
-  control, put the app behind HTTPS (e.g. a reverse proxy with TLS) so the credentials are
-  never sent in clear text.
+- Session cookies are used to keep you logged in. On any network you don't fully
+  control, put the app behind HTTPS (e.g. a reverse proxy with TLS) to prevent credentials
+  and session tokens from being sent in clear text.
