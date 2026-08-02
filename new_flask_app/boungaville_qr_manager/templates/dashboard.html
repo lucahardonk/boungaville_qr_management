@@ -317,7 +317,12 @@
             dateFormat: "Y-m-d H:i:S",
             time_24hr: true,
             minuteIncrement: 1,
-            defaultDate: now
+            defaultDate: now,
+            // Force flatpickr's own calendar everywhere. Without this, flatpickr
+            // falls back to the native picker on "mobile" webviews (e.g. the Home
+            // Assistant companion app), which renders dates in the device locale
+            // (e.g. "2 ago 2026, 13:01") instead of the required Y-m-d H:i:S format.
+            disableMobile: true
         });
 
         const checkOutPicker = flatpickr("#checkOutDateTime", {
@@ -325,7 +330,8 @@
             dateFormat: "Y-m-d H:i:S",
             time_24hr: true,
             minuteIncrement: 1,
-            defaultDate: tomorrow
+            defaultDate: tomorrow,
+            disableMobile: true
         });
 
         // Format date for API (YYYY-MM-DD-HH-MM-SS)
