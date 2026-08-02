@@ -12,9 +12,10 @@ dashboard you can:
 - Monitor the online/offline status of each reader.
 
 Authentication is handled with a **custom HTML login page** — the app shows a styled login
-form where the username is pre-filled and you only need to enter your password. Sessions are
-used to keep you logged in across requests. Credentials are read from a local `.env` file and
-never hardcoded in the source.
+form where the username is pre-filled and you only need to enter your password. A simple
+in-memory authentication flag keeps you logged in for 5 minutes (auto-resets after timeout).
+Credentials are read from Home Assistant options (when running as an add-on) or from a local
+`.env` file (local development) and never hardcoded in the source.
 
 ## QR Code Reader devices
 
@@ -116,6 +117,109 @@ Open `http://localhost:8086` — you will see the login page. Enter your credent
 
 > **Note:** The QR reader devices (192.168.1.65, 192.168.1.70, 192.168.1.73) must be reachable from the machine running the container. If you are running Docker on a different network segment, ensure routing/VPN is configured accordingly.
 
+## Deploying to Home Assistant as a Local Add-on
+
+This application can be installed as a **local add-on** in Home Assistant. Follow these steps to deploy or update the add-on:
+
+### Initial Installation
+
+1. **SSH into your Home Assistant instance** (enable SSH add-on first if not already done).
+
+2. **Clone the repository into `/tmp`:**
+   ```bash
+   cd /tmp
+   git clone -b feature/simplify-auth-dotenv https://github.com/lucahardonk/boungaville_qr_management.git
+   ```
+
+3. **Copy the add-on files to the local add-ons directory:**
+   ```bash
+   cp -a /tmp/boungaville_qr_management/new_flask_app/boungaville_qr_manager \
+         /root/addons/local/boungaville_qr_manager
+   ```
+   
+   > **Note:** Depending on your HA installation, the path might be `/addons/local` instead of `/root/addons/local`. Adjust accordingly.
+
+4. **Clean up unwanted files:**
+   ```bash
+   rm -rf /root/addons/local/boungaville_qr_manager/venv
+   rm -rf /root/addons/local/boungaville_qr_manager/__pycache__
+   rm -f /root/addons/local/boungaville_qr_manager/.env
+   ```
+
+5. **Fix line endings and permissions on the startup script:**
+   ```bash
+   sed -i 's/\r$//' /root/addons/local/boungaville_qr_manager/run.sh
+   chmod +x /root/addons/local/boungaville_qr_manager/run.sh
+   ```
+
+6. **Reload the add-on store** in Home Assistant:
+   - Go to **Settings** → **Add-ons** → **Add-on Store** (three dots menu) → **Reload**
+   - The add-on should now appear in the local add-ons section
+
+7. **Install and configure:**
+   - Click on **Boungaville QR Management** → **Install**
+   - Go to the **Configuration** tab and set your `admin_username` and `admin_password`
+   - Click **Save**, then **Start**
+
+### Updating the Add-on (Important!)
+
+When you push changes to the GitHub repository and want to update the running add-on in Home Assistant, follow these steps:
+
+> **CRITICAL:** Simply copying new files is NOT enough — Home Assistant caches the Docker image. You MUST force a rebuild using the `ha addons update` (or `ha apps update`) command, otherwise the changes will not take effect.
+
+1. **SSH into Home Assistant**
+
+2. **Pull the latest changes from GitHub:**
+   ```bash
+   cd /tmp
+   rm -rf boungaville_qr_management
+   git clone -b feature/simplify-auth-dotenv https://github.com/lucahardonk/boungaville_qr_management.git
+   ```
+
+3. **Replace the local add-on files:**
+   ```bash
+   rm -rf /root/addons/local/boungaville_qr_manager
+   cp -a /tmp/boungaville_qr_management/new_flask_app/boungaville_qr_manager \
+         /root/addons/local/boungaville_qr_manager
+   
+   rm -rf /root/addons/local/boungaville_qr_manager/venv
+   rm -rf /root/addons/local/boungaville_qr_manager/__pycache__
+   rm -f /root/addons/local/boungaville_qr_manager/.env
+   
+   sed -i 's/\r$//' /root/addons/local/boungaville_qr_manager/run.sh
+   chmod +x /root/addons/local/boungaville_qr_manager/run.sh
+   ```
+
+4. **Force the add-on to rebuild and update:**
+   ```bash
+   ha apps update local_boungaville_qr_manager
+   ```
+   
+   > **Note:** On older HA versions, use `ha addons update local_boungaville_qr_manager`
+   
+   This command forces Home Assistant to rebuild the Docker image from the updated source files. Without this step, the add-on will continue running the old cached image.
+
+5. **Restart the add-on** from the Home Assistant UI or via CLI:
+   ```bash
+   ha apps restart local_boungaville_qr_manager
+   ```
+
+6. **Verify the version:**
+   ```bash
+   ha apps info local_boungaville_qr_manager | grep version
+   ```
+   
+   You should see the updated version number from `config.json`.
+
+### Home Assistant Configuration
+
+When running as a Home Assistant add-on, credentials are configured through the add-on's **Configuration** tab:
+
+- `admin_username`: The username for logging in (default: `admin`)
+- `admin_password`: Your secure password (**required**)
+
+These values are passed to the container via Home Assistant's options system (`/data/options.json` inside the container). The `.env` file is only used for local development.
+
 ## Configuration
 
 The list of QR Code Reader devices lives in the `DEVICES` list near the top of
@@ -146,6 +250,7 @@ Restart the app after changing `DEVICES`.
   listed in `.gitignore`; only `.env.example` (with placeholder values) is tracked.
 - **Change the default password.** Do not ship `your-strong-password-here` — set a strong,
   unique `ADMIN_PASSWORD`.
-- Session cookies are used to keep you logged in. On any network you don't fully
-  control, put the app behind HTTPS (e.g. a reverse proxy with TLS) to prevent credentials
-  and session tokens from being sent in clear text.
+- **Authentication timeout:** The in-memory login flag expires after 5 minutes of inactivity.
+  This is a simple stateless approach designed to work reliably behind Home Assistant Ingress
+  (which can strip cookies). For local development on untrusted networks, put the app behind
+  HTTPS (e.g. a reverse proxy with TLS) to prevent credentials from being sent in clear text.
