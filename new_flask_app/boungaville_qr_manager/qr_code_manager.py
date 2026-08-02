@@ -1,22 +1,26 @@
 """
 QR Code Creator & Manager
 Flask web application for managing QR codes across Restaurant Manager devices
-Version: 1.4 - Added date validation
-Date: 2025-12-28
+Version: 1.5 - Switched to stateless HTTP Basic Auth and .env credentials
+Date: 2026-08-02
 """
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, Response
 import requests
 from datetime import datetime
 import json
 import qrcode
 import io
 import base64
+import os
 from functools import wraps
 import re
+from dotenv import load_dotenv
+
+# Load environment variables from a local .env file (if present)
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'change-this-secret-key-in-production'  # ⚠️ CHANGE THIS!
 
 # Configuration
 DEVICES = [
@@ -37,51 +41,54 @@ DEVICES = [
     }
 ]
 
-DEFAULT_USERNAME = 'admin'
-DEFAULT_PASSWORD = 'EHwnt.QRcd!2026'  # ⚠️ CHANGE THIS!
+# Credentials are loaded from the environment (.env file).
+# ADMIN_USERNAME defaults to 'admin'; ADMIN_PASSWORD has no default and must be set.
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
 
-# Authentication decorator
-def login_required(f):
+if not ADMIN_PASSWORD:
+    raise RuntimeError(
+        "ADMIN_PASSWORD is not set. Copy .env.example to .env and set ADMIN_PASSWORD."
+    )
+
+
+def check_auth(username, password):
+    """Return True if the provided credentials match the configured admin credentials."""
+    return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
+
+
+def authenticate():
+    """Send a 401 response that prompts the browser for HTTP Basic Auth credentials."""
+    return Response(
+        'Authentication required.',
+        401,
+        {'WWW-Authenticate': 'Basic realm="QR Manager"'}
+    )
+
+
+# Authentication decorator (stateless HTTP Basic Auth, no sessions/cookies)
+def basic_auth_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'logged_in' not in session:
-            return redirect(url_for('login'))
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
         return f(*args, **kwargs)
     return decorated_function
 
+
 @app.route('/')
+@basic_auth_required
 def index():
-    if 'logged_in' in session:
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form.get('username', '')
-        password = request.form.get('password', '')
-        
-        if username == DEFAULT_USERNAME and password == DEFAULT_PASSWORD:
-            session['logged_in'] = True
-            session['username'] = username
-            return redirect(url_for('dashboard'))
-        else:
-            return render_template('login.html', error='Invalid credentials', default_username=DEFAULT_USERNAME)
-    
-    return render_template('login.html', default_username=DEFAULT_USERNAME)
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
+    return dashboard()
 
 @app.route('/dashboard')
-@login_required
+@basic_auth_required
 def dashboard():
-    return render_template('dashboard.html', devices=DEVICES, username=session.get('username'))
+    return render_template('dashboard.html', devices=DEVICES)
 
 @app.route('/api/create_qr', methods=['POST'])
-@login_required
+@basic_auth_required
 def create_qr():
     try:
         data = request.json
@@ -204,7 +211,7 @@ def create_qr():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/get_all_qr_codes')
-@login_required
+@basic_auth_required
 def get_all_qr_codes():
     try:
         all_codes = []
@@ -285,7 +292,7 @@ def get_all_qr_codes():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/delete_qr', methods=['POST'])
-@login_required
+@basic_auth_required
 def delete_qr():
     try:
         data = request.json
@@ -322,7 +329,7 @@ def delete_qr():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/check_device_status')
-@login_required
+@basic_auth_required
 def check_device_status():
     """Check status of all enabled devices"""
     try:
